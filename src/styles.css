@@ -101,6 +101,23 @@ h2 {
   line-height: 1.75;
 }
 
+.intro-copy {
+  display: grid;
+  gap: 12px;
+  max-width: 56rem;
+  color: var(--site-muted-fg);
+  line-height: 1.75;
+}
+
+.intro-copy a {
+  margin-left: 0.4rem;
+  color: var(--site-accent-strong);
+}
+
+.intro-copy a:hover {
+  color: var(--site-accent);
+}
+
 .section-heading-row {
   display: flex;
   align-items: baseline;

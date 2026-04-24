@@ -478,18 +478,55 @@ function drawPathSegment(
   context.stroke();
 }
 
+function drawHandleArrow(
+  context: CanvasRenderingContext2D,
+  from: Point,
+  to: Point,
+  strokeStyle: string,
+) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+
+  if (length < 1e-6) {
+    return;
+  }
+
+  const angle = Math.atan2(dy, dx);
+  const arrowLength = 12;
+  const arrowSpread = Math.PI / 7;
+
+  context.save();
+  context.setLineDash([]);
+  context.strokeStyle = strokeStyle;
+  context.lineWidth = 1.25;
+  context.beginPath();
+  context.moveTo(to.x, to.y);
+  context.lineTo(
+    to.x - Math.cos(angle - arrowSpread) * arrowLength,
+    to.y - Math.sin(angle - arrowSpread) * arrowLength,
+  );
+  context.moveTo(to.x, to.y);
+  context.lineTo(
+    to.x - Math.cos(angle + arrowSpread) * arrowLength,
+    to.y - Math.sin(angle + arrowSpread) * arrowLength,
+  );
+  context.stroke();
+  context.restore();
+}
+
 export function TwoPointStraightPadSolverPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const [canvasWidth, setCanvasWidth] = useState(960);
   const [parameterA, setParameterA] = useState(120);
   const [startPose, setStartPose] = useState<Pose>({
-    point: { x: 160, y: 520 },
-    heading: -0.35,
+    point: { x: 254, y: 588 },
+    heading: -1.82,
   });
   const [endPose, setEndPose] = useState<Pose>({
-    point: { x: 900, y: 220 },
-    heading: 2.64,
+    point: { x: 846, y: 332 },
+    heading: 0.18,
   });
   const [dragTarget, setDragTarget] = useState<DragTarget | null>(null);
 
@@ -600,20 +637,15 @@ export function TwoPointStraightPadSolverPage() {
     context.stroke();
     context.restore();
 
+    drawHandleArrow(context, startPointOnScreen, startHandleOnScreen, '#94a3b8');
+    drawHandleArrow(context, endPointOnScreen, endHandleOnScreen, '#94a3b8');
+
     context.fillStyle = '#06b6d4';
     context.beginPath();
     context.arc(startPointOnScreen.x, startPointOnScreen.y, 7, 0, Math.PI * 2);
     context.fill();
     context.beginPath();
     context.arc(endPointOnScreen.x, endPointOnScreen.y, 7, 0, Math.PI * 2);
-    context.fill();
-
-    context.fillStyle = '#0891b2';
-    context.beginPath();
-    context.arc(coreStartOnScreen.x, coreStartOnScreen.y, 5, 0, Math.PI * 2);
-    context.fill();
-    context.beginPath();
-    context.arc(coreEndOnScreen.x, coreEndOnScreen.y, 5, 0, Math.PI * 2);
     context.fill();
 
     context.fillStyle = '#94a3b8';
@@ -628,9 +660,41 @@ export function TwoPointStraightPadSolverPage() {
     context.font = '12px "Segoe UI Variable", "Noto Sans SC", sans-serif';
     context.fillText('P0', startPointOnScreen.x + 10, startPointOnScreen.y - 10);
     context.fillText('P1', endPointOnScreen.x + 10, endPointOnScreen.y - 10);
-    context.fillStyle = '#0891b2';
-    context.fillText('核心起点', coreStartOnScreen.x + 10, coreStartOnScreen.y + 16);
-    context.fillText('核心终点', coreEndOnScreen.x + 10, coreEndOnScreen.y + 16);
+
+    const legendWidth = 150;
+    const legendHeight = 78;
+    const legendX = width - legendWidth - 16;
+    const legendY = height - legendHeight - 16;
+    const legendItems = [
+      { color: '#16a34a', label: '直线' },
+      { color: '#dc2626', label: '缓和曲线' },
+      { color: '#eab308', label: '圆曲线' },
+    ];
+
+    context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    context.strokeStyle = '#d1d5db';
+    context.lineWidth = 1;
+    context.beginPath();
+    context.roundRect(legendX, legendY, legendWidth, legendHeight, 12);
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = '#111827';
+    context.font = '12px "Segoe UI Variable", "Noto Sans SC", sans-serif';
+    context.fillText('线路图例', legendX + 12, legendY + 18);
+
+    legendItems.forEach((item, index) => {
+      const rowY = legendY + 34 + index * 16;
+      context.strokeStyle = item.color;
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(legendX + 12, rowY);
+      context.lineTo(legendX + 34, rowY);
+      context.stroke();
+
+      context.fillStyle = '#374151';
+      context.fillText(item.label, legendX + 42, rowY + 4);
+    });
   }, [
     canvasWidth,
     endHandle,
@@ -728,8 +792,8 @@ export function TwoPointStraightPadSolverPage() {
 
   const resetScene = () => {
     setParameterA(120);
-    setStartPose({ point: { x: 160, y: 520 }, heading: -0.35 });
-    setEndPose({ point: { x: 900, y: 220 }, heading: 2.64 });
+    setStartPose({ point: { x: 254, y: 588 }, heading: -1.82 });
+    setEndPose({ point: { x: 846, y: 332 }, heading: 0.18 });
   };
 
   const statusLabel =
@@ -743,11 +807,31 @@ export function TwoPointStraightPadSolverPage() {
 
   return (
     <>
+      <section className="page-header" aria-labelledby="straight-pad-intro-heading">
+        <div className="section-heading-row">
+          <h2 id="straight-pad-intro-heading">为什么需要缓和曲线</h2>
+        </div>
+
+        <div className="intro-copy">
+          <p>
+            当我们用弯道连接两段直线铁道时，我们并不直接使用圆曲线，而是在直线与圆曲线之间采用缓和曲线作为过渡。通过插入缓和曲线，我们使曲率连续过渡，避免曲率突变导致向心力突变。根据向心力公式 F
+            <sub>n</sub> = m · v
+            <sup>2</sup> / R，以及曲率定义 k := 1 / R，两者成正比。向心力的突变不仅会导致乘客乘坐体验不佳，也会增加铁道的磨损，甚至增大脱轨风险。实际上，圆曲线的曲率半径以及缓和曲线的参数，是线路限速的重要制约因素。
+          </p>
+          <p>
+            如果我们使曲率随弧长线性变化，那么就得到了一种铁道缓和曲线：欧拉螺线（Euler Spiral）。本项目使用的就是欧拉缓和曲线；这是美国铁路采用的类型，而中国铁路通常采用三次抛物线型缓和曲线。
+            <a href="https://en.wikipedia.org/wiki/Euler_spiral" target="_blank" rel="noreferrer">
+              Euler spiral - Wikipedia
+            </a>
+          </p>
+        </div>
+      </section>
+
       <section className="control-section" aria-labelledby="straight-pad-controls-heading">
         <div className="section-heading-row">
           <h2 id="straight-pad-controls-heading">二点约束 + 首尾直线</h2>
           <p className="section-note">
-            允许在 S-C-S 核心曲线两端各补一段非负直线，并在满足两点与两端切线约束的可行解里搜索最大半径 R。
+            允许核心 S-C-S 曲线前后补非负直线，并搜索最大可行半径 R。
           </p>
         </div>
 
@@ -777,11 +861,37 @@ export function TwoPointStraightPadSolverPage() {
         </div>
       </section>
 
+      <section className="canvas-section" aria-labelledby="straight-pad-canvas-heading">
+        <div className="section-heading-row">
+          <h2 id="straight-pad-canvas-heading">交互面板</h2>
+          <p className="section-note">
+            绿色为补线，红色为缓和曲线，黄色为圆曲线，灰色柄定义切线方向。
+          </p>
+        </div>
+
+        <figure className="canvas-figure">
+          <div ref={canvasHostRef} className="canvas-host">
+            <canvas
+              ref={canvasRef}
+              aria-label="允许首尾直线的二点约束最大半径求解画板"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerRelease}
+              onPointerCancel={handlePointerRelease}
+              onPointerLeave={handlePointerRelease}
+            />
+          </div>
+          <figcaption className="canvas-caption">
+            当纯 S-C-S 不能直接命中两点时，剩余位移会分配到两端补线，并继续向上搜索可行半径边界。
+          </figcaption>
+        </figure>
+      </section>
+
       <section className="metrics-section" aria-labelledby="straight-pad-metrics-heading">
         <div className="section-heading-row">
           <h2 id="straight-pad-metrics-heading">求解结果</h2>
           <p className="section-note">
-            直线段长度约束为 l0 ≥ 0、l1 ≥ 0。搜索策略先扫描可行半径区间，再在最后一处可行边界附近二分收敛到最大 R。
+            约束为 l0 ≥ 0、l1 ≥ 0，并在可行区间内逼近最大 R。
           </p>
         </div>
 
@@ -827,43 +937,17 @@ export function TwoPointStraightPadSolverPage() {
         <div className="solver-notes">
           <div>
             <h3>允许项</h3>
-            <p>核心曲线前后都允许补直线，因此目标点不必正好落在纯 S-C-S 轨迹上。</p>
+            <p>目标点不必落在纯 S-C-S 轨迹上。</p>
           </div>
           <div>
             <h3>优化目标</h3>
-            <p>在所有满足 l0 ≥ 0、l1 ≥ 0 的可行解中，优先选择半径最大的解，而不是直线最短的解。</p>
+            <p>在可行解中优先选择半径最大的结果。</p>
           </div>
           <div>
             <h3>图上含义</h3>
-            <p>aqua 大点是给定端点，aqua 小点是核心曲线接入点，绿色段是自动补上的首尾直线。</p>
+            <p>aqua 大点是端点，小点是核心曲线接点，绿色段是补线。</p>
           </div>
         </div>
-      </section>
-
-      <section className="canvas-section" aria-labelledby="straight-pad-canvas-heading">
-        <div className="section-heading-row">
-          <h2 id="straight-pad-canvas-heading">交互画板</h2>
-          <p className="section-note">
-            绿色线表示自动补上的首尾直线，红线表示缓和曲线，黄线表示圆曲线，灰色柄用于定义起终点切线方向。
-          </p>
-        </div>
-
-        <figure className="canvas-figure">
-          <div ref={canvasHostRef} className="canvas-host">
-            <canvas
-              ref={canvasRef}
-              aria-label="允许首尾直线的二点约束最大半径求解画板"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerRelease}
-              onPointerCancel={handlePointerRelease}
-              onPointerLeave={handlePointerRelease}
-            />
-          </div>
-          <figcaption className="canvas-caption">
-            当纯 S-C-S 无法直接命中两点时，这一版会把剩余位移分解到起终点切线方向上，只要两段补线长度都不为负，就视为可行；然后在这些可行解中继续把半径 R 向上推到可行边界。
-          </figcaption>
-        </figure>
       </section>
     </>
   );

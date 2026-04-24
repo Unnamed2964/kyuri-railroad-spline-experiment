@@ -29,6 +29,16 @@ body {
   font-family: var(--font-ui);
 }
 
+a {
+  color: var(--site-accent-strong);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--site-accent);
+  text-decoration: underline;
+}
+
 button,
 input,
 textarea,
@@ -118,6 +128,15 @@ h2 {
 
 .app-disclaimer-body {
   font-weight: 400;
+}
+
+.inline-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+  font-size: 0.95rem;
 }
 
 .intro-copy {

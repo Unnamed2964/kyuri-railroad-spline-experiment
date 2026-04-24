@@ -155,6 +155,16 @@ h2 {
   accent-color: var(--site-accent);
 }
 
+.solver-select {
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--site-border);
+  border-radius: 10px;
+  background: var(--site-surface);
+  color: var(--site-fg);
+}
+
 .slider-value {
   display: inline-flex;
   justify-content: flex-end;

@@ -23,6 +23,8 @@ type Viewport = {
 
 type DragTarget = 'start-point' | 'end-point' | 'start-handle' | 'end-handle';
 
+type TransitionCurveType = 'euler' | 'cubic-parabola';
+
 type StraightPadSolverResult = {
   status: 'ok' | 'approx' | 'straight-only' | 'invalid';
   radius: number;
@@ -155,15 +157,77 @@ function createProjector(viewport: Viewport, width: number, height: number) {
   };
 }
 
+function buildCubicParabolaProfile(
+  transitionLength: number,
+  radius: number,
+  turnSign: 1 | -1,
+  steps: number,
+) {
+  const safeSteps = Math.max(1, steps);
+  const points: CurvePoint[] = [{ x: 0, y: 0, theta: 0 }];
+
+  for (let index = 1; index <= safeSteps; index += 1) {
+    const x = (transitionLength * index) / safeSteps;
+    const slope = (x * x) / (2 * radius * transitionLength);
+    points.push({
+      x,
+      y: turnSign * (x * x * x) / (6 * radius * transitionLength),
+      theta: turnSign * Math.atan(slope),
+    });
+  }
+
+  return points;
+}
+
+function buildCubicParabolaExitProfile(entryProfile: CurvePoint[]) {
+  const endPoint = entryProfile[entryProfile.length - 1] ?? { x: 0, y: 0, theta: 0 };
+  const endHeading = endPoint.theta;
+  const profile: CurvePoint[] = [{ x: 0, y: 0, theta: 0 }];
+
+  for (let index = 1; index < entryProfile.length; index += 1) {
+    const source = entryProfile[entryProfile.length - 1 - index] ?? { x: 0, y: 0, theta: 0 };
+    const relative = rotate(
+      {
+        x: endPoint.x - source.x,
+        y: endPoint.y - source.y,
+      },
+      -endHeading,
+    );
+
+    profile.push({
+      x: relative.x,
+      y: -relative.y,
+      theta: wrapAngle(endHeading - source.theta),
+    });
+  }
+
+  return profile;
+}
+
+function getMinimumRadius(curveType: TransitionCurveType, transitionParameter: number, headingDelta: number) {
+  const headingMagnitude = Math.max(Math.abs(headingDelta), 1e-6);
+
+  if (curveType === 'euler') {
+    return transitionParameter / Math.sqrt(headingMagnitude);
+  }
+
+  return Math.sqrt(transitionParameter / (2 * Math.tan(headingMagnitude * 0.5)));
+}
+
 function simulateSymmetricCurve(
-  parameterA: number,
+  curveType: TransitionCurveType,
+  transitionParameter: number,
   radius: number,
   headingDelta: number,
   turnSign: 1 | -1,
   returnSamples: boolean,
 ) {
-  const transitionLength = (parameterA * parameterA) / radius;
-  const transitionAngle = (transitionLength * transitionLength) / (2 * parameterA * parameterA);
+  const transitionLength =
+    curveType === 'euler' ? (transitionParameter * transitionParameter) / radius : transitionParameter / radius;
+  const transitionAngle =
+    curveType === 'euler'
+      ? (transitionLength * transitionLength) / (2 * transitionParameter * transitionParameter)
+      : Math.atan((transitionLength * transitionLength) / (2 * transitionParameter));
   const rawCircleAngle = Math.abs(headingDelta) - 2 * transitionAngle;
 
   if (rawCircleAngle < -1e-6) {
@@ -177,6 +241,70 @@ function simulateSymmetricCurve(
   const entrySteps = Math.max(24, Math.round((segmentCount * transitionLength) / totalLength));
   const circleSteps = Math.max(16, Math.round((segmentCount * circleLength) / totalLength));
   const exitSteps = entrySteps;
+
+  if (curveType === 'cubic-parabola') {
+    const entryProfile = buildCubicParabolaProfile(transitionLength, radius, turnSign, entrySteps);
+    const entryEnd = entryProfile[entryProfile.length - 1] ?? { x: 0, y: 0, theta: 0 };
+    let x = entryEnd.x;
+    let y = entryEnd.y;
+    let theta = entryEnd.theta;
+    const samples: CurvePoint[] = returnSamples ? entryProfile.slice() : [];
+    const entrySampleCount = returnSamples ? samples.length : 0;
+    let circleSampleCount = 0;
+
+    if (circleLength > 1e-9 && circleSteps > 0) {
+      const deltaS = circleLength / circleSteps;
+
+      for (let index = 0; index < circleSteps; index += 1) {
+        const deltaTheta = (turnSign * circleAngle) / circleSteps;
+        const midTheta = theta + deltaTheta * 0.5;
+        x += Math.cos(midTheta) * deltaS;
+        y += Math.sin(midTheta) * deltaS;
+        theta += deltaTheta;
+
+        if (returnSamples) {
+          samples.push({ x, y, theta });
+        }
+      }
+    }
+
+    if (returnSamples) {
+      circleSampleCount = samples.length - entrySampleCount;
+    }
+
+    const circleEnd = { x, y, theta };
+    const exitProfile = buildCubicParabolaExitProfile(entryProfile);
+    const exitEnd = exitProfile[exitProfile.length - 1] ?? { x: 0, y: 0, theta: 0 };
+    const rotatedExitEnd = rotate(exitEnd, circleEnd.theta);
+
+    if (returnSamples) {
+      for (let index = 1; index < exitProfile.length; index += 1) {
+        const point = exitProfile[index];
+        const rotatedPoint = rotate(point, circleEnd.theta);
+        samples.push({
+          x: circleEnd.x + rotatedPoint.x,
+          y: circleEnd.y + rotatedPoint.y,
+          theta: wrapAngle(circleEnd.theta + point.theta),
+        });
+      }
+    }
+
+    return {
+      transitionLength,
+      circleLength,
+      totalLength,
+      circleAngle,
+      entrySampleCount,
+      circleSampleCount,
+      end: {
+        x: circleEnd.x + rotatedExitEnd.x,
+        y: circleEnd.y + rotatedExitEnd.y,
+        theta: wrapAngle(circleEnd.theta + exitEnd.theta),
+      },
+      samples,
+    };
+  }
+
   let x = 0;
   let y = 0;
   let theta = 0;
@@ -207,7 +335,7 @@ function simulateSymmetricCurve(
 
   advance(transitionLength, entrySteps, (index, deltaS) => {
     const sMid = (index + 0.5) * deltaS;
-    return turnSign * (sMid / (parameterA * parameterA));
+    return turnSign * (sMid / (transitionParameter * transitionParameter));
   });
 
   if (returnSamples) {
@@ -222,7 +350,7 @@ function simulateSymmetricCurve(
 
   advance(transitionLength, exitSteps, (index, deltaS) => {
     const sMid = (index + 0.5) * deltaS;
-    return turnSign * ((transitionLength - sMid) / (parameterA * parameterA));
+    return turnSign * ((transitionLength - sMid) / (transitionParameter * transitionParameter));
   });
 
   return {
@@ -288,7 +416,12 @@ function solveStraightPadding(
   };
 }
 
-function solveMinRadiusWithStraightPads(startPose: Pose, endPose: Pose, parameterA: number): StraightPadSolverResult {
+function solveMinRadiusWithStraightPads(
+  startPose: Pose,
+  endPose: Pose,
+  curveType: TransitionCurveType,
+  transitionParameter: number,
+): StraightPadSolverResult {
   const headingDelta = wrapAngle(endPose.heading - startPose.heading);
   const relativeTarget = rotate(subtract(endPose.point, startPose.point), -startPose.heading);
   const chordLength = Math.max(distance(startPose.point, endPose.point), 1);
@@ -320,15 +453,16 @@ function solveMinRadiusWithStraightPads(startPose: Pose, endPose: Pose, paramete
   }
 
   const turnSign = Math.sign(headingDelta) >= 0 ? 1 : -1;
-  const minRadius = parameterA / Math.sqrt(Math.max(Math.abs(headingDelta), 1e-6));
+  const minRadius = getMinimumRadius(curveType, transitionParameter, headingDelta);
   const lowerBound = minRadius * 1.0005;
-  const upperBound = Math.max(lowerBound * 36, chordLength * 12, parameterA * 18);
+  const scaleParameter = curveType === 'euler' ? transitionParameter : Math.sqrt(transitionParameter);
+  const upperBound = Math.max(lowerBound * 36, chordLength * 12, scaleParameter * 18);
   const sampleCount = 360;
   let lastFeasibleRadius: number | null = null;
   let firstInfeasibleAfterFeasible: number | null = null;
 
   const isFeasible = (radius: number) => {
-    const simulation = simulateSymmetricCurve(parameterA, radius, headingDelta, turnSign, false);
+    const simulation = simulateSymmetricCurve(curveType, transitionParameter, radius, headingDelta, turnSign, false);
     if (!simulation) {
       return false;
     }
@@ -389,7 +523,7 @@ function solveMinRadiusWithStraightPads(startPose: Pose, endPose: Pose, paramete
   }
 
   const bestRadius = left;
-  const simulation = simulateSymmetricCurve(parameterA, bestRadius, headingDelta, turnSign, true);
+  const simulation = simulateSymmetricCurve(curveType, transitionParameter, bestRadius, headingDelta, turnSign, true);
   if (!simulation) {
     return {
       status: 'invalid',
@@ -519,7 +653,9 @@ export function TwoPointStraightPadSolverPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const [canvasWidth, setCanvasWidth] = useState(960);
-  const [parameterA, setParameterA] = useState(120);
+  const [transitionCurveType, setTransitionCurveType] = useState<TransitionCurveType>('euler');
+  const [eulerParameterA, setEulerParameterA] = useState(120);
+  const [cubicParameterC, setCubicParameterC] = useState(36000);
   const [startPose, setStartPose] = useState<Pose>({
     point: { x: 254, y: 588 },
     heading: -1.82,
@@ -529,6 +665,7 @@ export function TwoPointStraightPadSolverPage() {
     heading: 0.18,
   });
   const [dragTarget, setDragTarget] = useState<DragTarget | null>(null);
+  const transitionParameter = transitionCurveType === 'euler' ? eulerParameterA : cubicParameterC;
 
   useEffect(() => {
     if (!canvasHostRef.current) {
@@ -545,8 +682,8 @@ export function TwoPointStraightPadSolverPage() {
   }, []);
 
   const solverResult = useMemo(
-    () => solveMinRadiusWithStraightPads(startPose, endPose, parameterA),
-    [endPose, parameterA, startPose],
+    () => solveMinRadiusWithStraightPads(startPose, endPose, transitionCurveType, transitionParameter),
+    [endPose, startPose, transitionCurveType, transitionParameter],
   );
   const viewport: Viewport = WORLD_BOUNDS;
   const startHandle = getHandlePoint(startPose);
@@ -791,7 +928,8 @@ export function TwoPointStraightPadSolverPage() {
   };
 
   const resetScene = () => {
-    setParameterA(120);
+    setEulerParameterA(120);
+    setCubicParameterC(36000);
     setStartPose({ point: { x: 254, y: 588 }, heading: -1.82 });
     setEndPose({ point: { x: 846, y: 332 }, heading: 0.18 });
   };
@@ -819,7 +957,7 @@ export function TwoPointStraightPadSolverPage() {
             <sup>2</sup> / R，以及曲率定义 k := 1 / R，两者成正比。向心力的突变不仅会导致乘客乘坐体验不佳，也会增加铁道的磨损，甚至增大脱轨风险。实际上，圆曲线的曲率半径以及缓和曲线的参数，是线路限速的重要制约因素。
           </p>
           <p>
-            如果我们使曲率随弧长线性变化，那么就得到了一种铁道缓和曲线：欧拉螺线（Euler Spiral）。本项目使用的就是欧拉缓和曲线；这是美国铁路采用的类型，而中国铁路通常采用三次抛物线型缓和曲线。
+            如果我们使曲率随弧长线性变化，那么就得到欧拉螺线（Euler Spiral）；如果采用 y = x³ / 6C 的近似式，其中 C = RL，则得到三次抛物线型缓和曲线。本项目支持这两种模型：欧拉缓和曲线常见于美国铁路，三次抛物线型缓和曲线常见于中国铁路。
             <a href="https://en.wikipedia.org/wiki/Euler_spiral" target="_blank" rel="noreferrer">
               Euler spiral - Wikipedia
             </a>
@@ -836,18 +974,40 @@ export function TwoPointStraightPadSolverPage() {
         </div>
 
         <div className="solver-controls-grid">
+          <label className="slider-row" htmlFor="straight-pad-curve-type">
+            <span className="slider-label">类型</span>
+            <select
+              id="straight-pad-curve-type"
+              className="solver-select"
+              value={transitionCurveType}
+              onChange={(event) => setTransitionCurveType(event.target.value as TransitionCurveType)}
+            >
+              <option value="euler">欧拉缓和曲线</option>
+              <option value="cubic-parabola">三次抛物线</option>
+            </select>
+            <span className="slider-value">{transitionCurveType === 'euler' ? 'Euler' : 'y = x³ / 6C'}</span>
+          </label>
+
           <label className="slider-row" htmlFor="straight-pad-parameter-a">
-            <span className="slider-label">A</span>
+            <span className="slider-label">{transitionCurveType === 'euler' ? 'A' : 'C'}</span>
             <input
               id="straight-pad-parameter-a"
               type="range"
-              min="40"
-              max="220"
-              step="1"
-              value={parameterA}
-              onChange={(event) => setParameterA(Number(event.target.value))}
+              min={transitionCurveType === 'euler' ? '40' : '4000'}
+              max={transitionCurveType === 'euler' ? '220' : '90000'}
+              step={transitionCurveType === 'euler' ? '1' : '100'}
+              value={transitionParameter}
+              onChange={(event) => {
+                const nextValue = Number(event.target.value);
+                if (transitionCurveType === 'euler') {
+                  setEulerParameterA(nextValue);
+                  return;
+                }
+
+                setCubicParameterC(nextValue);
+              }}
             />
-            <output className="slider-value">{formatValue(parameterA, 0)}</output>
+            <output className="slider-value">{formatValue(transitionParameter, 0)}</output>
           </label>
 
           <div className="solver-actions">
@@ -897,6 +1057,10 @@ export function TwoPointStraightPadSolverPage() {
 
         <dl className="metrics-grid solver-metrics-grid">
           <div>
+            <dt>{transitionCurveType === 'euler' ? '参数 A' : '固定参数 C = RL'}</dt>
+            <dd>{formatValue(transitionParameter)}</dd>
+          </div>
+          <div>
             <dt>最大可行半径 R</dt>
             <dd>{formatValue(solverResult.radius)}</dd>
           </div>
@@ -945,7 +1109,7 @@ export function TwoPointStraightPadSolverPage() {
           </div>
           <div>
             <h3>图上含义</h3>
-            <p>aqua 大点是端点，小点是核心曲线接点，绿色段是补线。</p>
+            <p>aqua 大点是端点，绿色段是补线，红色段是缓和曲线。</p>
           </div>
         </div>
       </section>

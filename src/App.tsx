@@ -6,6 +6,12 @@ export default function App() {
       <section className="page-header app-header">
         <p className="eyebrow">railroad spline experiment</p>
         <h1>铁路缓和曲线实验</h1>
+        <p className="app-disclaimer" role="note" aria-label="免责声明">
+          <span className="app-disclaimer-label">注意</span>
+          <span className="app-disclaimer-body">
+            这是一个自娱自乐的 AI vibe coding 小实验。代码、数学推导、结果和文案都没有经过认真审查，请不要把它当成可靠工具。
+          </span>
+        </p>
         <p className="lead">
           给定两点、两端切线和参数 A，实时搜索允许首尾补直线时的最大可行半径 R。
         </p>

@@ -249,7 +249,6 @@ h2 {
 .canvas-host {
   width: 100%;
   border: 1px solid var(--site-border);
-  border-radius: 18px;
   background: var(--site-surface);
   overflow: hidden;
 }

@@ -1,49 +1,9 @@
 :root {
   --site-bg: #f8fafc;
   --site-surface: #ffffff;
-  --site-fg: #111827;
-  --site-muted-fg: #4b5563;
-  --site-subtle-fg: #6b7280;
-  --site-border: #d1d5db;
   --site-border-soft: #e5e7eb;
   --site-accent: #06b6d4;
   --site-accent-strong: #0f766e;
-  --font-ui: "Segoe UI Variable", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", sans-serif;
-  color-scheme: light;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  margin: 0;
-  min-height: 100%;
-}
-
-body {
-  background: var(--site-bg);
-  color: var(--site-fg);
-  font-family: var(--font-ui);
-}
-
-a {
-  color: var(--site-accent-strong);
-  text-decoration: none;
-}
-
-a:hover {
-  color: var(--site-accent);
-  text-decoration: underline;
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
 }
 
 h1,
@@ -56,8 +16,6 @@ figure {
 }
 
 .page-shell {
-  width: min(56rem, calc(100vw - 32px));
-  margin: 0 auto;
   padding: 28px 0 48px;
 }
 
@@ -128,15 +86,6 @@ h2 {
 
 .app-disclaimer-body {
   font-weight: 400;
-}
-
-.inline-links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  margin-top: 14px;
-  font-size: 0.95rem;
 }
 
 .intro-copy {
